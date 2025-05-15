@@ -14,6 +14,8 @@ fn panic(info: &PanicInfo) -> ! {
 /// Entry point
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
+    vga::disable_cursor();
+
     for i in 0..40 {
         println!("line {}", i);
     }

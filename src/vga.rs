@@ -19,6 +19,7 @@ use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
+use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,4 +171,35 @@ macro_rules! println {
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
     WRITER.lock().write_fmt(args).unwrap();
+}
+
+pub fn disable_cursor() {
+    // first, figure out the I/OAS status
+    // http://www.osdever.net/FreeVGA/vga/extreg.htm#3CCR3C2W
+    let misc_out: u8;
+    unsafe {
+        misc_out = u8::read_from_port(0x3cc);
+    }
+
+    // determine the port addresses based on the lowest bit of the above port read
+    // http://www.osdever.net/FreeVGA/vga/crtcreg.htm
+    let crtc_addr: u16;
+    let crtc_data: u16;
+    if (misc_out & 1) == 0 {
+        crtc_addr = 0x3b4;
+        crtc_data = 0x3b5;
+    } else {
+        crtc_addr = 0x3d4;
+        crtc_data = 0x3d5;
+    }
+
+    unsafe {
+        // set the address to the Cursor Start Register
+        // http://www.osdever.net/FreeVGA/vga/crtcreg.htm#0A
+        u8::write_to_port(crtc_addr, 0xa);
+
+        // then, turn it off
+        // only bit 4 needs to be set
+        u8::write_to_port(crtc_data, 1 << 4);
+    }
 }
