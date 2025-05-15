@@ -10,6 +10,8 @@
 //! links:
 //! - reference post (lots of the boilerplate is from here): <https://os.phil-opp.com/vga-text-mode/>
 //! - vga symbols: <https://en.wikipedia.org/wiki/Code_page_437>
+//! - vga text mode: <https://en.wikipedia.org/wiki/VGA_text_mode>
+//! - freevga: <http://www.osdever.net/FreeVGA/home.htm>
 //!
 
 use core::fmt;
@@ -66,8 +68,9 @@ struct Buffer {
 }
 
 pub struct Writer {
-    column_position: usize,
-    color_code: ColorCode,
+    current_col: usize,
+    current_row: usize,
+    default_color_code: ColorCode,
     buffer: &'static mut Buffer,
 }
 
@@ -76,32 +79,40 @@ impl Writer {
         match byte {
             b'\n' => self.new_line(),
             byte => {
-                if self.column_position >= BUFFER_WIDTH {
+                if self.current_col >= BUFFER_WIDTH {
                     self.new_line();
                 }
 
-                let row = BUFFER_HEIGHT - 1;
-                let col = self.column_position;
+                let row = self.current_row;
+                let col = self.current_col;
 
-                let color_code = self.color_code;
+                let color_code = self.default_color_code;
                 self.buffer.chars[row][col].write(ScreenChar {
                     ascii_character: byte,
                     color_code,
                 });
-                self.column_position += 1;
+                self.current_col += 1;
             }
         }
     }
 
     fn new_line(&mut self) {
-        for row in 1..BUFFER_HEIGHT {
-            for col in 0..BUFFER_WIDTH {
-                let character = self.buffer.chars[row][col].read();
-                self.buffer.chars[row - 1][col].write(character);
+        // check if we still have more screen real estate to use
+        if self.current_row == BUFFER_HEIGHT - 1 {
+            // we ran out of space, shift all the rows up in preparation to overwrite the bottom row
+            for row in 1..BUFFER_HEIGHT {
+                for col in 0..BUFFER_WIDTH {
+                    let character = self.buffer.chars[row][col].read();
+                    self.buffer.chars[row - 1][col].write(character);
+                }
             }
+            self.clear_row(self.current_row);
+        } else {
+            // we still have more rows available
+            self.current_row += 1;
         }
-        self.clear_row(BUFFER_HEIGHT - 1);
-        self.column_position = 0;
+
+        self.current_col = 0;
     }
 
     pub fn write_string(&mut self, s: &str) {
@@ -118,7 +129,7 @@ impl Writer {
     fn clear_row(&mut self, row: usize) {
         let blank = ScreenChar {
             ascii_character: b' ',
-            color_code: self.color_code,
+            color_code: self.default_color_code,
         };
         for col in 0..BUFFER_WIDTH {
             self.buffer.chars[row][col].write(blank);
@@ -135,8 +146,9 @@ impl fmt::Write for Writer {
 
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-        column_position: 0,
-        color_code: ColorCode::new(Color::Yellow, Color::Black),
+        current_col: 0,
+        current_row: 0,
+        default_color_code: ColorCode::new(Color::White, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
 }
